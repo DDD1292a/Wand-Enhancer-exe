@@ -15,6 +15,8 @@
     <s:String x:Key="mw_made_by">Fait avec ❤️ par k1tbyte</s:String>
     <s:String x:Key="mw_star_hint">Mettez une étoile si cela vous a aidé ;)</s:String>
     <s:String x:Key="mw_copy_logs">Copier les logs dans le presse-papiers</s:String>
+    <s:String x:Key="mw_copy_diagnostics">Copier les informations de diagnostic pour un rapport de bug</s:String>
+    <s:String x:Key="mw_redetect">Redétecter l'installation de Wand</s:String>
     <s:String x:Key="mw_export_logs">Exporter les logs dans un fichier</s:String>
     <!--#endregion -->
 
@@ -46,6 +48,7 @@
     <s:String x:Key="log_install_found">Répertoire WeMod trouvé à {0} ({1})</s:String>
     <s:String x:Key="log_already_patched">WeMod est déjà patché. Si vous souhaitez le patcher à nouveau, veuillez d'abord restaurer la sauvegarde.</s:String>
     <s:String x:Key="log_ready">Prêt pour le patch.</s:String>
+    <s:String x:Key="log_newer_version">Une version plus récente de Wand ({0}) est installée dans {1} ; cette sélection ne corrige que l'ancienne version.</s:String>
     <s:String x:Key="log_install_not_found">Répertoire WeMod introuvable.</s:String>
     <s:String x:Key="log_no_directory">Impossible. Veuillez d'abord spécifier le répertoire.</s:String>
     <s:String x:Key="log_invalid_directory">Le dossier sélectionné {0} n'est pas un répertoire WeMod valide.</s:String>

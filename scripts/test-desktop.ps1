@@ -107,6 +107,8 @@ try {
     foreach ($path in $autoPatchConfig, (Join-Path $scratch 'launcher.log'), (Join-Path $scratch 'launcher.prev.log')) {
         [IO.File]::WriteAllText($path, 'fixture')
     }
+    $watcherExe = Join-Path $scratch 'WandEnhancerWatcher.exe'
+    [IO.File]::WriteAllText($watcherExe, 'fixture')
 
     # Restore can only target this fixture's unique process name and scratch Squirrel root.
     Assert-Equal ([Diagnostics.Process]::GetProcessesByName($config.BrandName).Length) 0 'Fixture process isolation'
@@ -116,10 +118,26 @@ try {
     }
     Assert-Equal ([IO.File]::ReadAllText((Join-Path $scratch 'FixtureClient.exe'))) 'original launcher' 'Restore launcher'
     Assert-Equal (Test-Path $autoPatchConfig) $false 'Restore removes auto-patch config'
+    Assert-Equal (Test-Path $watcherExe) $false 'Restore removes the deployed watcher exe'
     foreach ($log in 'launcher.log', 'launcher.prev.log') {
         Assert-Equal (Test-Path (Join-Path $scratch $log)) $true "Restore keeps $log"
     }
     Assert-Equal ($isPatched.Invoke($null, $installArgument)) $false 'Restored installation'
+
+    # A watcher exe still locked by its exiting process must not fail an otherwise complete Restore.
+    [IO.File]::WriteAllText($backup, 'original archive')
+    [IO.Directory]::CreateDirectory($unpackedBackup) | Out-Null
+    [IO.File]::WriteAllText((Join-Path $unpackedBackup 'original.txt'), 'original unpacked')
+    [IO.File]::WriteAllText($watcherExe, 'fixture')
+    $watcherLock = [IO.File]::Open($watcherExe, 'Open', 'Read', 'None')
+    try {
+        $enhancerType.GetMethod('Restore').Invoke($enhancer, $null) | Out-Null
+    }
+    finally {
+        $watcherLock.Dispose()
+    }
+    Assert-Equal (Test-Path $backup) $false 'Restore completes while the watcher exe is locked'
+    Assert-Equal (Test-Path $watcherExe) $true 'A locked watcher exe is left in place'
 
     # A lock while restoring the pristine files must trigger the rollback, not leave a half-emptied tree.
     [IO.File]::WriteAllText($asar, 'original archive')
@@ -212,9 +230,43 @@ try {
         Assert-Equal ($null -ne $resolved) $true "Resolves $candidate"
         Assert-Equal $resolved.RootDirectory $versionFolder "Resolved root for $candidate"
     }
+
+    # Re-detect moves to the newest install of the root, and keeps a hand-picked folder that is not an app-* folder.
+    $rescan = $assembly.GetType('WandEnhancer.Utils.WeModInstalls', $true).GetMethod('Rescan')
+    $configType = $assembly.GetType('WandEnhancer.Models.WeModConfig', $true)
+    function Invoke-Rescan([string]$Root, [string]$InstallFolder) {
+        $target = [Activator]::CreateInstance($configType)
+        $target.RootDirectory = $InstallFolder
+        $rescan.Invoke($null, [object[]]@($Root, $target))
+    }
+    $olderFolder = Join-Path $squirrelRoot 'app-1.0.0'
+    $portableRoot = Join-Path $scratch 'portable'
+    $portable = Join-Path $portableRoot 'Wand'
+    foreach ($folder in $olderFolder, $portable) {
+        [IO.Directory]::CreateDirectory((Join-Path $folder 'resources')) | Out-Null
+        [IO.File]::WriteAllText((Join-Path $folder 'Wand.exe'), '')
+        [IO.File]::WriteAllText((Join-Path $folder 'resources\app.asar'), '')
+    }
+    $newest = Invoke-Rescan $squirrelRoot $olderFolder
+    Assert-Equal ($null -ne $newest -and $newest.RootDirectory -eq $versionFolder) $true 'Rescan moves to the newest install'
+    $kept = Invoke-Rescan $portableRoot $portable
+    Assert-Equal ($null -ne $kept -and $kept.RootDirectory -eq $portable) $true 'Rescan keeps a valid hand-picked folder'
+    Assert-Equal ($null -eq (Invoke-Rescan $portableRoot (Join-Path $portableRoot 'Gone'))) $true 'Rescan drops an install that is gone'
     foreach ($candidate in $unrelated, (Join-Path $scratch 'missing-folder')) {
         Assert-Equal ($null -eq $resolveInstall.Invoke($null, [object[]]@([string]$candidate))) $true "Rejects $candidate"
     }
+
+    # Squirrel keeps the previous version folder and a scan or backup write makes it look newer: rank by version, not mtime.
+    $rankRoot = Join-Path $scratch 'rank-root'
+    foreach ($name in 'app-12.9.0', 'app-12.10.0') {
+        $folder = Join-Path $rankRoot $name
+        [IO.Directory]::CreateDirectory((Join-Path $folder 'resources')) | Out-Null
+        [IO.File]::WriteAllText((Join-Path $folder 'Wand.exe'), '')
+        [IO.File]::WriteAllText((Join-Path $folder 'resources\app.asar'), '')
+    }
+    (Get-Item -LiteralPath (Join-Path $rankRoot 'app-12.9.0')).LastWriteTime = (Get-Date).AddHours(1)
+    $latest = $resolveInstall.Invoke($null, [object[]]@([string]$rankRoot))
+    Assert-Equal $latest.RootDirectory (Join-Path $rankRoot 'app-12.10.0') 'Latest install is the highest version, not the newest folder'
     Write-Host 'Desktop regression checks passed (native sizes, backups, rollback, retry state, restore).'
 }
 finally {
